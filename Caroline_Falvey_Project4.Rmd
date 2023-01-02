@@ -1,0 +1,124 @@
+---
+title: "Project 4"
+author: "Caroline Falvey"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+
+# Load Libraries
+library(knitr)
+library(tidyverse)
+library(lubridate)
+library(here)
+
+# Clear Lists
+rm(list = ls())
+
+```
+
+
+
+```{r Data Import, echo = TRUE, message = FALSE, results='hide'}
+
+# Call directory
+here::here("Duke", "Fall 2022", "721", "Project 4")
+
+# Read in data files
+AQ2018 <- read_csv("AQ_2018.csv")
+AQ2019 <- read_csv("AQ_2019.csv")
+AQ2020 <- read_csv("AQ_2020.csv")
+
+```
+<br>
+```{r Function Creation, echo = TRUE}
+
+airquality_summary <- function(dataset) {
+
+  dataset_new <- dataset |>
+    na.omit() |> # Remove NAs
+    rename( # Change variable names
+      CO_conc = variable.names(dataset)[2],
+      PM2.5_conc = variable.names(dataset)[4],
+      ox_conc = variable.names(dataset)[6]
+    )
+
+  # Format date variable
+  dataset_new$Date <- mdy(dataset_new$Date)
+
+  # Get rid of negative values for CO Concentration
+  for (i in seq_along(dataset_new$CO_conc)) {
+    if (dataset_new$CO_conc[i] < 0) {
+      dataset_new$CO_conc[i] <- 0
+    }
+  }
+
+  # Get rid of negative values for PM2.5 Concentration
+  for (j in seq_along(dataset_new$PM2.5_conc)) {
+    if (dataset_new$PM2.5_conc[j] < 0) {
+      dataset_new$PM2.5_conc[j] <- 0
+    }
+  }
+
+  # Get rid of negative values for Ox Concentration
+  for (k in seq_along(dataset_new$ox_conc)) {
+    if (dataset_new$ox_conc[k] < 0) {
+      dataset_new$ox_conc[k] <- 0
+    }
+  }
+  
+  dataset_short <- dataset_new |>
+    select(!contains("units")) |> # Remove unit columns
+    group_by(Date) |> # Group rows by date
+    summarise( # Calculate the mean for each day
+      CO_conc = mean(CO_conc),
+      PM2.5_conc = mean(PM2.5_conc),
+      ox_conc = mean(ox_conc)
+    ) |>
+    distinct() # Remove duplicated rows
+
+
+  # Create table for min and max:
+  min <- apply(dataset_short[2:4], MARGIN = 2, FUN = min)
+  max <- apply(dataset_short[2:4], MARGIN = 2, FUN = max)
+
+  # Create table to be outputted with min and max:
+  output <- cbind(min, max)
+  rownames(output) <- c("CO (ppm)", "PM2.5 (ug/m3)", "O3 (ppm)")
+  colnames(output) <- c("Minimum", "Maximum")
+
+  # Create kable table to be outputted:
+  return(kable(output, align = "c", 
+               caption = "Concentrations", digits = 3))
+}
+
+
+```
+<br>
+```{r Output, echo = TRUE}
+
+# Run function on 2018 - 2020 datasets
+sum2018 <- airquality_summary(AQ2018)
+sum2019 <- airquality_summary(AQ2019)
+sum2020 <- airquality_summary(AQ2020)
+
+```
+\newpage
+
+**2018 Summary:**
+<br>
+`r {sum2018}`
+<br>
+<br>
+**2019 Summary:**
+<br>
+`r {sum2019}`
+<br>
+<br>
+**2020 Summary:**
+<br>
+`r {sum2020}`
+<br>
+<br>
