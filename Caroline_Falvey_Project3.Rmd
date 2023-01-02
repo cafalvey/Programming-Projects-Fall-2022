@@ -1,0 +1,134 @@
+---
+title: "Project 3"
+author: "Caroline Falvey"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+#Load libraries
+library(readr)
+library(knitr)
+library(ggplot2)
+library(gapminder)
+library(viridis)
+library(dplyr)
+library(wesanderson)
+library(haven)
+
+#Clear lists
+rm(list = ls())
+
+```
+
+## Question 1: Population Size by Continent
+<br>
+
+```{r Q1, echo = TRUE}
+
+# Filter by year to only include data from 1997:
+year_subset <- gapminder |>
+  filter(year == 1997)
+
+# Calculate mean, sd, n, lower bounds, and upper bounds for the population of the 1997 data
+year_subset_2 <- year_subset |>
+  group_by(continent) |>
+  summarize(mean_pop = (mean(pop) / 100000),
+            sd = sd(pop) / 100000,
+            count = n()) |>
+  mutate(
+    LB = mean_pop - 1.96 * sd / sqrt(count),
+    UB = mean_pop + 1.96 * sd / sqrt(count)
+  )
+
+# Set negative lower bounds equal to 0 (since pop size must be positive)
+year_subset_2$LB[year_subset_2$LB < 0] <- 0
+
+# Set color palette
+col_1 <- wes_palette("Cavalcanti1", n = 5, type = "discrete")
+
+# Create Plot
+ggplot(
+  year_subset_2,
+  aes(x = continent, y = mean_pop, color = continent)
+) +
+  geom_point(size = 3.5, show.legend = FALSE) + # set geom point & rm legend
+  geom_linerange(aes(ymin = LB, ymax = UB),
+                 show.legend = FALSE) + # add error bars
+  xlab("Continent") + # set x-axis label
+  ylab("Population Size (x100,000)") + # set y-axis label
+  ggtitle("Population Size by Continent (1997)") + #set title
+  scale_color_manual(values = col_1) + # set color palette
+  theme_classic()
+
+
+```
+
+\newpage
+
+## Question 2: Life Expectancy by GDP
+<br>
+
+```{r Q2, echo = TRUE}
+
+# Create plot using 1997 data from Question 1
+ggplot(
+  year_subset,
+  aes(
+    x = gdpPercap,
+    y = lifeExp,
+    color = continent, # set color by continent
+    cex = pop
+  )
+) + # set point size by population size
+  geom_point() +
+  scale_size(guide = "none") +
+  xlab("GDP per capita ($)") + # set x-axis label
+  ylab("Life Expectancy (years)") + # set y-axis label
+  ggtitle("Life Expectancy by GDP (1997)") + # set title
+  scale_color_viridis(option = "plasma",
+                      discrete = TRUE,
+                      name = "Continent") + #set color palette
+  theme_bw()
+
+```
+
+\newpage
+
+## Question 3: GDP vs Life Expectancy
+<br>
+
+```{r Q3, echo = TRUE}
+
+# Filter entire dataset to only include the 4 selected countries
+country_subset <- gapminder |>
+  filter(country == "Denmark" |
+    country == "Peru" |
+    country == "Botswana" |
+    country == "Mongolia")
+
+# Set color palette
+col_3 <- c("cadetblue3", "darkolivegreen3", "goldenrod2", "hotpink3")
+
+# Create plot
+ggplot(
+  country_subset,
+  aes(x = gdpPercap, y = lifeExp, color = country)
+) +
+  geom_point(size = 4, alpha = 0.6) + # set geom point
+  xlab("GDP per capita ($)") + # set x-axis label
+  ylab("Life Expectancy (Years)") + # set y-axis label
+  ggtitle("Life Expectency by GDP per Capita (1952 - 2007)") + # set title
+  facet_grid(~year) + # facet by year
+  theme_bw() +
+  scale_color_manual(values = col_3, name = "Country") + # set color palette
+  theme(
+    legend.position = "bottom", # put legend at bottom
+    legend.title = element_text(size = 11, face = "bold"), # edit legend title
+    plot.title = element_text(hjust = 0.5, face = "bold"), # edit graph title
+    axis.text.x = element_text(angle = 90)
+  ) # tilt x-axis values for readability
+```
+
