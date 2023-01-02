@@ -1,0 +1,257 @@
+---
+title: "721: Project 2"
+author: "Caroline Falvey"
+date: '2022-10-04'
+output:
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+#Load libraries
+library(readr)
+library(dplyr)
+library(lubridate)
+library(here)
+library(knitr)
+library(gtsummary)
+library(here)
+
+#Clear lists
+rm(list = ls())
+
+```
+
+## 
+
+```{r, echo = TRUE, message = FALSE}
+
+here::here("Duke", "Fall 2022", "721", "Project 2")
+
+# Read in the two datasets
+patient <- read_csv("Patient Level Data.csv")
+encounter <- read_csv("Encounter Level Data.csv")
+
+# Join the two datasets by MRN to create the full dataset
+full_set <- full_join(patient, encounter, by = c("MRN"))
+
+```
+
+
+# Data Set Description:
+
+The dataset contains `r {length(variable.names(full_set))}` variables with `r {length(full_set$contact_date)}` total encounters across `r {length(unique(full_set$MRN))}` patients. A full list of variables is included below:\
+
+* *`r {variable.names(full_set)[1]}`*: a nominal variable containing each patient's medical record number (MRN) as a unique ID\
+* *`r {variable.names(full_set)[2]}`*: a date variable containing each patient's date of birth\
+* *`r {variable.names(full_set)[3]}`*: a categorical variable indicating each patient's race as white, black, or other\
+* *`r {variable.names(full_set)[4]}`*: a categorical variable indicating whether each patient has Medicare or private insurance\
+* *`r {variable.names(full_set)[5]}`*: a binary categorical variable classifying each patient's ethnicity as Hispanic or non-Hispanic\
+* *`r {variable.names(full_set)[6]}`*: a binary categorical variable indicating if a patient was hypertensive during a given encounter\
+* *`r {variable.names(full_set)[7]}`*: a binary categorical variable indicating if a patient has Congestive Heart Failure\
+* *`r {variable.names(full_set)[8]}`*: a binary categorical variable indicating if a patient has diabetes\
+* *`r {variable.names(full_set)[9]}`*: a date variable indicating the date of each encounter between 2014 and 2019\
+* *`r {variable.names(full_set)[10]}`*: a binary categorical variable indicating if each encounter was a hospital visit or an office visit\
+* *`r {variable.names(full_set)[11]}`*: a continuous variable with the patient's temperature (°F) for each encounter. Values range from `r {round(min(full_set$temp, na.rm = TRUE), 2)}`°F to `r {round(max(full_set$temp, na.rm = TRUE), 2)}`°F\
+* *`r {variable.names(full_set)[12]}`*: an ordinal variable indicating a patient's distress score for each encounter. Values range from `r {min(full_set$distress_score, na.rm = TRUE)}` to `r {max(full_set$distress_score, na.rm = TRUE)}`\
+* *`r {variable.names(full_set)[13]}`*: a continuous variable indicating each patient's white blood cell count (k/uL) at each encounter. Values range from `r {round(min(full_set$WBC, na.rm = TRUE), 2)}` k/uL to `r {round(max(full_set$WBC, na.rm = TRUE), 2)}` k/uL\
+* *`r {variable.names(full_set)[14]}`*: a continuous variable indicating each patient's body mass index (BMI) at each encounter\
+
+<br>
+
+# Data Cleaning:
+
+```{r data cleaning, echo = TRUE, results = "hide"}
+
+# Create new variable for clean BMI data
+full_set$BMI.r_clean <- full_set$BMI.r
+# Truncate BMIs > 100 & <10
+full_set$BMI.r_clean[full_set$BMI.r_clean > 100] <- 100
+full_set$BMI.r_clean[full_set$BMI.r_clean < 10] <- 10
+
+# Remove NAs in BMI data
+full_set$BMI.r_clean[full_set$BMI.r_clean == "-999"] <- NA
+
+# Create new variable for clean WBC data
+full_set$WBC_clean <- full_set$WBC
+# Truncate WBC < 0.05 k/uL
+full_set$WBC_clean[full_set$WBC_clean < 0.05] <- 0.05
+
+# Create new DOB variable using lubridate
+full_set$DOB_clean <- mdy(full_set$DOB)
+# Check for nonsensical DOBs
+table(year(full_set$DOB_clean))
+# Remove DOBs before 1900
+full_set$DOB_clean[year(full_set$DOB_clean) < 1900] <- NA
+
+# Remove raw data for DOB, WBC, and BMI from full dataset to use only cleaned variables
+full_set <- full_set %>%
+  select(-DOB, -WBC, -BMI.r)
+
+```
+
+<br>
+
+# Temperature: 
+
+```{r temperature, echo = TRUE}
+# Round temp to one decimal place
+full_set$rounded_temp <- round(full_set$temp, 1)
+
+# Display first 10 values
+full_set$rounded_temp[1:10]
+
+```
+<br> 
+
+# WBC Categorization:
+
+```{r WBC, echo = TRUE}
+
+# Set ranges for WBC counts from Low - High in new variable
+full_set$WBC_cat <- ifelse(full_set$WBC_clean < 3.2, "Low",
+  ifelse(full_set$WBC_clean <= 9.8, "Normal",
+    ifelse(full_set$WBC_clean > 9.8, "High",
+      NA
+    )
+  )
+)
+
+# Set WBC_cat equal to Not Taken for NA values
+full_set$WBC_cat[is.na(full_set$WBC_clean)] <- "Not Taken"
+
+# Display results in logical order in a table
+kable(table(full_set$WBC_cat)[c(1, 3, 2, 4)],
+  align = "c",
+  col.names = c("WBC Range", "Frequency")
+)
+
+```
+<br>
+
+# Elevated Temperature:
+
+```{r elevated temp flag, ECHO = TRUE}
+
+elv_temp <- full_set %>%
+  select(MRN, contact_date, rounded_temp) %>% # select only MRN, contact date, and temp variables from full dataset
+  filter(rounded_temp > 100) %>% # remove data for temp < 100
+  arrange(MRN) # organize by MRN
+
+
+# Display table of encounters with elevated temp (organized by MRN)
+kable(elv_temp, align = "c", col.names = c("MRN", "Date", "Temperature"))
+```
+
+<br>
+
+# Mean BMIs:
+
+```{r BMI table, ECHO = TRUE}
+
+bmi_table <- full_set %>%
+  select(MRN, BMI.r_clean) %>% # select only MRN & BMI from the full dataset
+  filter(MRN == "CI6950" |
+    MRN == "IW9164" |
+    MRN == "HJ8458" |
+    MRN == "XE4615") %>% # filter by chosen MRNs
+  group_by(MRN) %>%
+  summarise(BMI = mean(BMI.r_clean, na.rm = TRUE)) # calculate mean for each MRN
+
+# Round BMI to one decimal place
+bmi_table$BMI <- round(bmi_table$BMI, 1)
+
+# Display table of mean BMI by MRN
+kable(bmi_table, align = "c")
+
+```
+
+<br>
+
+# Number of Hospital Encounters per Year:
+
+```{r hopital encounters, ECHO = TRUE}
+
+# Convert format of contact date to year-month-date
+full_set$contact_date_clean <- mdy(full_set$contact_date)
+
+# Create new data set for just encounter types & contact dates
+year_set <- full_set %>%
+  select(enc_type, contact_date_clean) %>%
+  filter(enc_type == "Hospital Encounter") # filter to just have hospital encounters
+
+# Create new variable to store years of hospital encounters
+cont_years <- year(year_set$contact_date_clean)
+
+# Create a table showing how many hospital encounters occurred each year
+kable(table(cont_years),
+  align = "c",
+  col.names = c("Year", "Hospital Encounters")
+)
+
+```
+
+<br>
+
+# Patient Ages:
+
+```{r age, echo = TRUE}
+# Create start date of 9/1/2019:
+start_date <- as.Date("9/1/2019", tryFormats = "%m/%d/%Y")
+
+# Calculate age using start date and DOB_clean variable created in Chunk 4: data cleaning
+full_set$age <- as.numeric(difftime(
+  time1 = start_date,
+  time2 = full_set$DOB_clean,
+  units = "days"
+) / 365)
+
+# Remove duplicated patients by filtering by duplicated MRN
+age_set <- full_set %>%
+  filter(!duplicated(MRN)) %>%
+  select(MRN, age)
+
+#Compute and display summary statistics for age:
+age_set %>%
+  summarise(
+    Min = min(age, na.rm = TRUE),
+    Q1 = quantile(age,
+      probs = 0.25,
+      names = FALSE, na.rm = TRUE
+    ),
+    Median = median(age, na.rm = TRUE),
+    Mean = mean(age, na.rm = TRUE),
+    Q3 = quantile(age,
+      probs = 0.75,
+      names = FALSE, na.rm = TRUE
+    ),
+    Max = max(age, na.rm = TRUE),
+    SD = sd(age_set$age, na.rm = TRUE)
+  ) %>%
+  kable(digits = 2, align = "c")
+
+```
+
+
+<br>
+
+# Demographic Data Frequencies:
+
+```{r demographic data, echo=TRUE}
+
+# Create summary table with counts and percentages with gtsummary
+patient %>%
+  select( #Select variables
+    race, ethnicity, financialclass,
+    hypertension, CHF, diabetes
+  ) %>%
+  tbl_summary(label = list( #Clarify variable names for output
+    race ~ "Race",
+    ethnicity ~ "Ethnicity",
+    financialclass ~ "Financial Class",
+    hypertension ~ "Hypertension",
+    CHF ~ "Congestive Heart Failure",
+    diabetes ~ "Diabetes"
+  ))
+```
