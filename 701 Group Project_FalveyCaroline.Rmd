@@ -1,0 +1,552 @@
+---
+title: '701: Group Project'
+author: "Caroline Falvey"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+
+library(tidyverse)
+library(rstatix)
+library(knitr)
+library(boot)
+library(confintr)
+```
+
+# Question 1
+To perform the desired exact test, verify that the sample space consists of exactly 184,756 possible tables, conditional on 10 from each group, 3 terrible scores, 3 poor scores, etc.  Attach your R code.  Under the null hypothesis, these 184,756 tables are all equally likely.  Calculate an exact distribution of the test statistic under the null hypothesis.  Use this distribution to compute an exact p-value.
+
+Explain what you've done (1) to a fellow biostatistician; and (2) to a non-statistical investigator.  For the explanation to the fellow biostatistician, include a description of the sampling distribution for the distance metric under the null hypothesis.
+
+
+<br>
+```{r gridgen}
+n = 20 ## total number of participants
+l = rep(list(0:1), n) ## list of 0s and 1s of length n
+
+grid = expand.grid(l)
+dim(grid)
+```
+<br>
+
+```{r gridcond}
+colnames(grid) = c("T1", "T2", "T3", 
+                   "P1", "P2", "P3",
+                   "F1", "F2", "F3",
+                   "G1", "G2", "G3", "G4", "G5",
+                   "E1", "E2", "E3", "E4", "E5", "E6")
+
+gridclean = grid[rowSums(grid) == 10,]
+dim(gridclean)
+
+```
+
+<br>
+
+```{r}
+distcal = function(gridRow){
+  dist = 1:4
+  
+  ta = gridRow$T1 + gridRow$T2 + gridRow$T3 ## terrible group A
+  tb = 3 - ta ## terrible group B
+  dist[1] = abs(ta - tb)/10
+  
+  pa = gridRow$P1 + gridRow$P2 + gridRow$P3
+  pb = 3 - pa
+  dist[2] = abs((ta + pa) - (tb + pb))/10
+  
+  fa = gridRow$F1 + gridRow$F2 + gridRow$F3
+  fb = 3 - fa
+  dist[3] = abs((ta + pa + fa) - (tb + pb + fb))/10
+  
+  ga = gridRow$G1 + gridRow$G2 + gridRow$G3
+  gb = 3 - fb
+  dist[4] = abs((ta + pa + fa + ga) - (tb + pb + fb + gb))/10
+  
+  return(max(dist))
+  
+}
+
+n = nrow(gridclean)
+dists = 1:n
+
+for (i in 1:n){
+  dists[i] = distcal(gridclean[i,])
+}
+
+hist(dists)
+
+```
+
+<br>
+
+```{r}
+p_val = sum(dists >= 0.3) / n
+
+p_val = round(p_val, digits = 2)
+p_val
+```
+<br>
+
+First, we generated a grid of all possible permutations of the table from the pilot study. Our permutatios of the table must include 20 patients with 10 patients assigned to Group A and 10 patients assigned to Group B. We can see above that there are `r {dim(gridclean)[1]}` unique tables generated. We then calculate the distance metric between the two groups (A=0 and B=1) for each table, which we used for our test statistic.
+
+To calculate our p-values, we compared our initial maximum distance from the CDF of 0.3 to the simulated max distances from our tables. Our p-value is the probability of observing a table with the same or a more extreme maximum distance than 0.3. The null distribution for each group is a multinomial distribution.
+
+To a non-statistical investigator, we can compare simulating all possible tables to drawing balls out of an urn. If the urn contains 20 balls that are all color-coded based on health status, we will randomly draw 10 balls to be Group A, and the remaining 10 balls will be considered Group B. As above, we are simulating this for all possible permutations of drawing the balls randomly into two groups. Ultimately, we want to see how extreme our observed table is compared to all other possible results.
+
+The calculated p-value is `r {p_val}`, which implies that, at the 0.05 significance level, we do not have the sufficient evidence needed to reject $H_0$. We therefore can conclude that there is not a significant difference in the outcome of the two treatment groups.
+
+<br>
+
+# Question 2
+
+The investigator wants to perform a power calculation.  In the absence of a MCID, they want to assume that the parameter values from the pilot study (e.g., Pr{terrible outcome | group=A}=0.20) apply.  What sample size is needed for 80% power?  You'll have to switch from exact-based methods to simulation-based methods.  
+
+
+Hint: In theory, you could apply the exact test from part 1 as part of the power calculation, but in practice this would be quite tedious.  Feel free to assume that the sample sizes are large enough that a chi-square test for trend is appropriate.
+
+Explain your algorithm for estimating power in plain English.
+
+<br>
+
+```{r Question 2}
+set.seed(123)
+power_sim <- function(N, sample_size){
+  library(rstatix)
+  pvals <- 1:N
+  for(i in 1:N){
+    groupA <- rmultinom(n=1, size=sample_size, prob = c(.2, .2, .2, .2, .2))
+    groupB <- rmultinom(n=1, size=sample_size, prob = c(.1, .1, .1, .3, .4))
+    tab <- as.table(rbind(
+      groupA[,1],
+      groupB[,1]
+    ))
+    pval <- prop_trend_test(tab)$p
+    pvals[i] <- pval
+  }
+  #getting the proportion of the p-values that are less than .05
+  return(sum(pvals <= .05) / N)
+}
+
+
+# Create vector of possible n values
+ns = 35:50
+# Create result vector
+result_vec = rep(NA, length(ns))
+
+# Loop though possible ns to see which one yields ~80% power
+for (i in 1:length(ns)){
+  set.seed(123)
+  result_vec[i] <- power_sim(100, ns[i])
+}
+
+# Create a data frame of n values and results
+df = data.frame(ns, result_vec)
+# Confirm which n yields 80% power
+n = df$ns[which(df$result_vec > .8)]
+#print first n with at least 80% power
+n[1] 
+
+```
+<br>
+
+The necessary sample size is `r {n[1]}` participants per group (i.e. `r {n[1] * 2}` patients total). 
+
+Using our function, we simulate new results for Group A and Group B by drawing number from the multinomial distribution with the probabilities from the main study. Then, we conduct the proportion trend test and store the p-values in a result vector. 
+
+Power is the probability of rejecting the $H_0$ when $H_A$ is true. To reject $H_0$, we need a p-value that is less than our significance level of 0.05. Therefore, to calculate our power, we calculate the proportion of p-values that are greater than 0.05 (i.e. the proportion of p-values that are clinically significant).
+
+
+<br>
+
+# Question 3
+
+The investigator needs a power calculation within the next 60 seconds.  (Perhaps they are presenting a proposal to a review panel in real time and are asked to do so.)  You ask them how to best dichotomize health status, and they say good/excellent versus the others.  Perform the power calculation.  (You can take more than 60 seconds to figure out the answer.)
+
+<br>
+```{r Question 3}
+table1 = data.frame(
+  Names = c("A", "B"),
+  Terrible = c(2, 1),
+  Poor = c(2, 1),
+  Fair = c(2, 1),
+  Good = c(2, 3),
+  Excellent = c(2, 4),
+  Total = c(10, 10),
+  stringsAsFactors = TRUE
+)
+
+tQ3 = table1 %>%
+  mutate(GE = Good + Excellent) %>%
+  mutate(Other = Terrible + Poor + Fair) %>%
+  select(GE, Other)
+
+tprb = tQ3/10; tprb
+
+## here we do a difference in proportions test where success is group in GE and failure is group in other
+
+pwr2prop = function(pi1, pi2, n1, n2 = n1){ ## actual power calculation for 2 proportion test from Tina
+  
+  d0 = 0
+  alpha = 0.05
+  za2 = qnorm(alpha/2)
+  z1a2 = qnorm(1-alpha/2)
+  
+  pbar = (n1*pi1 + n2*pi2)/(n1 + n2)
+  
+  v =  (pbar*(1-pbar))/n1 + (pbar*(1-pbar))/n2
+  v2 = (pi1*(1-pi1))/n1 + (pi2 * (1 - pi2))/n2
+ 
+  se = sqrt(v)
+  se2 = sqrt(v2)
+  
+  d1 = pi1-pi2
+  
+  p1 = pnorm((za2 * se + d0), d1, se2)
+  p2 = pnorm((z1a2 * se + d0), d1, se2, lower.tail=FALSE)
+  
+  pwr = p1+p2
+  return(pwr)
+}
+ns = seq(10, 50, 1)
+
+pwrs = c()
+pA = 0.4
+pB = 0.7
+
+for (i in 1:length(ns)){
+  n = ns[i]
+  
+  pwr = pwr2prop(pA, pB, n)
+  
+  pwrs = c(pwrs, pwr)
+}
+
+dat = data.frame(ns, pwrs)
+
+dat = dat %>%
+  filter(pwrs > 0.8)
+
+ans = dat[1,] 
+ans
+
+## check with power.prop.test
+
+check = power.prop.test(n = NULL, p1 = pA, p2 = pB, sig.level = 0.05, power = 0.8, alternative = "two.sided"); check 
+
+check_n = round(check$n) 
+check_n
+
+```
+<br>
+
+To achieve 80% power, we will need `r {ans$ns}` participants per group (i.e. `r {2*ans$ns}` patients total).
+
+If we actually needed to perform the calculation in 60 seconds, we would use an online calculator or power.prop.test in R.
+
+<br>
+
+# Question 4
+
+The pilot study was eventually followed with a larger study, in large part because you impressed the review panel by performing the power calculation with 10 seconds to spare.  Table 3 summarizes the results.
+
+Perform a chi-square test for association (with 4 degrees of freedom).  Perform a chi-square test for trend (with 1 degree of freedom).  In plain English, explain the difference between these two tests.  
+
+<br>
+```{r Question 4}
+A <- c(20, 20, 16, 21, 23)
+B <- c(10, 15, 21, 24, 30)
+
+Q4 <- rbind.data.frame(A, B)
+colnames(Q4) <- c("Terrible", "Poor", "Fair", "Good", "Excellent")
+rownames(Q4) <- c("A", "B")
+
+#Chi-sq test for association
+assoc = chisq.test(Q4)
+assoc
+
+p_assoc = assoc$p.value
+p_assoc
+
+#Chi-sq test for trend
+trend = prop_trend_test(Q4,c(0, 40, 50, 80, 100))
+trend
+
+p_trend = trend$p
+p_trend
+
+```
+<br>
+
+Let $\alpha = 0.05$ for the above tests.
+
+The p-value for the chi-square test for association is `r round(p_assoc, 2)`, which is greater than 0.05. Given our large p-value, we fail to reject $H_0$, and we can conclude that the two variables are not associated. This implies that the results of Treatment A and Treatment B are independent.
+
+The p-value for the chi-square test for trend is `r round(p_trend, 2)`, which less than $\alpha$ at the 0.05 significance level. Therefore, we can reject $H_0$ and conclude that there is a linear trend between intervention and score.
+
+The chi-square test for association is used to determine if there is an association between two categorical variables. Ultimately, it tests if two variables are independent of each other. For the above example, we are testing if the patients' results from Group A are independent of the results from patients in Group B.
+
+The chi-square test for trend is used to test whether there is an existing linear trend in outcome among two categorical variables. Unlike the chi-square test for association, the trend test takes into account that the data contains ordered groups. In our example, we are testing whether there is a linear trend between the results of Group A vs. the results of Group B.
+
+# Question 5
+
+Transform the outcome into the continuous scores {0,40,50,75,100}.  Compare the groups, using (1) a t-test; and (2) a Wilcoxon test.
+
+Do the same using the scores {0,25,50,75,100}.  How similar are your results to those which used the scores {0,40,50,75,100}?
+
+Are the assumptions of the t-test literally satisfied?
+
+<br>
+```{r Question 5}
+A <- c(20, 20, 16, 21, 23)
+B <- c(10, 15, 21, 24, 30)
+
+## modifies A and B from number 4 to have the new scores
+A_mod = c(rep(0, A[1]), rep(40, A[2]), rep(50, A[3]), 
+           rep(75, A[4]), rep(100, A[5]))
+B_mod = c(rep(0, B[1]), rep(40, B[2]), rep(50, B[3]), 
+           rep(75, B[4]), rep(100, B[5]))
+
+Q5 = cbind.data.frame(A_mod, B_mod)
+colnames(Q5) = c("A", "B")
+
+
+t.test(Q5$A, Q5$B)
+pval_ttest_1 <- t.test(Q5$A, Q5$B)$p.value
+
+wilcox.test(Q5$A, Q5$B)
+pval_wilcox_1 <- wilcox.test(Q5$A, Q5$B)$p.value
+
+## modifies A and B again to have second set of scores
+
+A_mod_2 = c(rep(0, A[1]), rep(25, A[2]), rep(50, A[3]), 
+             rep(75, A[4]), rep(100, A[5]))
+B_mod_2 = c(rep(0, B[1]), rep(25, B[2]), rep(50, B[3]), 
+             rep(75, B[4]), rep(100, B[5]))
+
+Q5_2 = cbind.data.frame(A_mod_2, B_mod_2)
+colnames(Q5_2) = c("A", "B")
+
+t.test(Q5_2$A, Q5_2$B)
+pval_ttest_2 <- t.test(Q5_2$A, Q5_2$B)$p.value
+
+wilcox.test(Q5_2$A, Q5_2$B)
+pval_wilcox_2 <- wilcox.test(Q5_2$A, Q5_2$B)$p.value
+
+```
+
+<br>
+
+First, let $\alpha = 0.05$ for all of our tests.
+
+The results of the initial t-test yield a p-value of `r {round(pval_ttest_1, 3)}`. Since our p-value is less than 0.05, we can reject $H_0$ and conclude that the mean scores of the two groups are significantly different. The results of the initial Wilcoxon test yields a p-value of `r {round(pval_wilcox_1, 3)}`. This p-value is also less than our pre-set $\alpha$ of 0.05, so we have sufficient evidence to reject the null hypothesis that the median score of the differences between the paired data (Treatment A vs Treatment B) is zero. We therefore conclude median scores of the two groups are significantly different.
+
+When we assign different score values to our data, the repeated t-test and Wilcoxon tests yield p-values of `r {round(pval_ttest_2, 3)}` and `r {round(pval_wilcox_2, 3)}` respectively. The new p-values are approximately the same as the p-values from the initial tests above, and both yield statistically significant results at a $\alpha = 0.05$ significance level. This is because, although the score values are shifting, the actual distribution of scores in the two data sets are identical.
+
+In the tests above, the assumptions of the t-test are not literally met. The t-test for comparing two population means assumes that the two populations are independent of each other with equal variance and normally distributed. Although we did transform our data to numeric scores, the data is still not normally distributed. Since a patient cannot achieve a score outside of the pre-set values (i.e. {0,40,50,75,100} or {0,25,50,75,100}), the data is actually discrete and, therefore, fails the assumption of normality.
+
+<br>
+
+# Question 6
+
+Apply a permutation test to the data from the main study.  Use the score {0,40,50,80,100} as the outcome.  In plain English, explain its logic in a way that's clear to a non-statistician.
+
+<br>
+
+```{r Question 6}
+
+## Counts for group A and group B
+A <- c(20, 20, 16, 21, 23)
+B <- c(10, 15, 21, 24, 30)
+
+## Create A mod and B mod such that there are (count) replicates of (score) for (group)
+##20 replicates of 0 for group A, 20 replicates of 40 for group A etc.
+
+A_mod <- c(rep(0, A[1]), rep(40, A[2]), rep(50, A[3]), 
+           rep(80, A[4]), rep(100, A[5]))
+B_mod <- c(rep(0, B[1]), rep(40, B[2]), rep(50, B[3]), 
+           rep(80, B[4]), rep(100, B[5]))
+
+# Calculate initial mean
+initial_mean = mean(A_mod) - mean(B_mod)
+
+n = 1000
+
+set.seed(123)
+result_vec <- rep(NA, n) #initialize vector for mean differences
+Group = c(rep("A", 100), rep("B", 100)) #vector for initial groups
+new.group = rep(NA, 200) #initialize vector for new group assignments
+result = c(A_mod, B_mod) #vector for initial results
+
+
+for (a in 1:n) {
+  rand = runif(200) #compute random values to re-arrange groups
+  perm.test = data.frame(Group, result, rand, new.group) #create new dataframe
+  
+  for (i in 1:200) { #re-assign patients to group A or B based on random number
+    if (perm.test$rand[i] < median(perm.test$rand)) {
+      perm.test$new.group[i] <- "A"
+    } else {
+      perm.test$new.group[i] <- "B"
+    }
+  }
+  
+  new_A = 0 #initialize new vector for the new Group A
+  new_B = 0 #initialize new vector for the new Group B
+  
+  for (j in 1:200) { #sort patients into their new groups
+    if (perm.test$new.group[j] == "A") {
+      new_A <- append(new_A, perm.test$result[j], after = length(new_A))
+    } else {
+      new_B <- append(new_B, perm.test$result[j], after = length(new_B))
+    }
+  }
+  
+  new_A <- sort(new_A[2:101]) #get rid of initial 0 in vector & sort values
+  new_B <- sort(new_B[2:101]) #get rid of initial 0 in vector & sort values
+  d <- rep(NA, 5) #initialize vector to store the distances of CDF
+  
+  
+  # Calculate differences in mean between the two groups
+  mean_new <- mean(new_A) - mean(new_B)
+  result_vec[a] <- mean_new
+  
+}
+
+# Initial Mean
+initial_mean
+
+#Calculate critical values
+crit_values = quantile(result_vec, probs = c(0.025, 0.975), names = F)
+
+#Calculate p-value
+q6p = (sum(result_vec <= initial_mean) / n) + (sum(result_vec >= abs(initial_mean)) / n)
+q6p
+
+
+result_plot <- ggplot(data = NULL, aes(x = result_vec)) +
+  geom_histogram(bins = 20, fill="#69b3a2", color="black", alpha=0.9) +
+  xlab("Mean Difference") +
+  ylab(NULL) +
+  ggtitle("Distribution of Mean Differences",
+          subtitle = paste("N =", n)) +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5), 
+        plot.subtitle = element_text(hjust = 0.5)) 
+
+result_plot
+
+
+result_plot + 
+  geom_vline(xintercept = initial_mean, linetype = "solid", color = "red") +
+  geom_vline(xintercept = crit_values, linetype = "dashed") +
+  annotate(geom="label", label=round(crit_values,1), 
+           x=crit_values, y=1, vjust=0, hjust = -0.5) +
+  annotate(geom = "label", label = round(initial_mean, 1), 
+           x = initial_mean, y = 1, vjust = 0, hjust = 1.5, color ="red") +
+  annotate(geom = "label", 
+           label = paste("Rejection Region:", "< -9.3 or > 8.9", sep="\n"),
+           x = -14, y = 125)
+
+```
+<br>
+
+The permutation test above gives us a p-value of `r {q6p}`. At the 0.05 significance level, we reject $H_0$ and can conclude that the mean difference between the two treatments is significantly different from zero. This means that the two treatments are not equally effective. 
+
+In the permutation test, results from both groups are randomly shuffled (i.e. randomly permuted) for comparison. In each iteration of the simulation, we randomly create two new groups using the outcomes from the initial group A and B patients. Then, once the new groups are randomly assigned, we can re-calculate the mean difference. Once we have all the mean differences generated from the simulation, we can compare the initial mean difference seen from the actual study results to see how extreme it is in comparison to the mean differences obtained from shuffling the groups. 
+
+The distribution of mean differences will be approximately normal in the permutation test, as extreme values (or high densities of high or low scores in this example) will be randomly distributed between treatment groups in each iteration of the simulation. Here, our initial mean difference was `r {initial_mean}`, which is significantly extreme when compared to the results of the other mean differences generated by the permutation test. 
+
+
+<br>
+
+# Question 7 
+
+Using data from the main study, apply bootstrapping to produce a confidence interval for the difference between the 2 group means (using {0,40,50,80,100}).  Use this confidence interval to perform a statistical test comparing the two group means.  In plain English, explain its logic in a way that's clear to a non-statistician.
+
+<br>
+
+```{r Question 7}
+
+set.seed(12345)
+
+final = data.frame()
+
+for(i in 1:1000){
+  x <- sample(Q5$A, 100, replace = TRUE)
+  y <- sample(Q5$B, 100, replace = TRUE)
+
+  results <- data.frame(x, y) %>%
+    summarize(avg_x = mean(x),
+    avg_y = mean(y),
+    dif = (avg_x - avg_y))
+
+
+  final <- rbind.data.frame(final, results)
+}
+
+CI_7 <- quantile(final$dif, c(.025, .975), names = F)
+CI_7
+
+
+```
+<br>
+
+Using bootstrapping on the data from the main study, we get a 95% confidence interval of (`r {round(CI_7, 3)}`). Since 0 is not contained within our interval, we have sufficient evident to conclude that the mean difference in scores between Group A and Group B is non-zero.
+
+By bootstrapping our data, we are randomly sampling from the main study results with replacement. Then, after the new groups are created using random sampling, we calculate the new mean difference. By simulating random sampling multiple times (1000 times in this circumstance), we can get a range of plausible values for the mean difference. Finally, we can calculate a 95% confidence interval using these results by taking the 2.5 and 97.5 percentiles. 
+
+If zero were contained in our interval, then there it is a possibility that the means of each treatment are the same (i.e. $\bar{x_A} - \bar{x_B} = 0 \implies  \bar{x_A} = \bar{x_B}$). However, given that our interval of (`r {round(CI_7, 3)}`) does *not* contain zero, we have sufficient evidence to conclude that the mean scores the treatment groups are not the same.
+
+
+<br>
+
+# Question 8
+
+Using data from the main study, calculate a parametric (i.e., Pearson) and non-parametric (i.e., Spearman) correlation coefficient quantifying the relationship between study group and health status (0,40,50,80, 100).  Describe what these correlations measure, and describe the differences between the two.  Describe their potential limitations.
+
+Calculate a confidence interval for the Pearson correlation coefficient based on a transformation to approximate normality.  In plain English, explain how this confidence interval was created, and why a transformation is needed.  If you didn't know how to translate a correlation coefficient into something which is approximately normal, what could you do instead?  
+
+<br>
+
+```{r Question 8}
+A <- c(20, 20, 16, 21, 23)
+B <- c(10, 15, 21, 24, 30)
+
+A_mod <- c(rep(0, A[1]), rep(40, A[2]), rep(50, A[3]), 
+           rep(80, A[4]), rep(100, A[5]))
+B_mod <- c(rep(0, B[1]), rep(40, B[2]), rep(50, B[3]), 
+           rep(80, B[4]), rep(100, B[5]))
+
+
+result <- c(A_mod, B_mod) #Create a vector of all results
+treat <- as.numeric(c(rep(0, 100), rep(1, 100))) #create a vector of all treatments
+
+# Assign treatment A as 0 & treatment B as 1
+
+overall <- data.frame(result, treat) #create dataframe with results and treatments
+
+# Perform correlation tests
+cor.test(overall$result, overall$treat, method = "pearson")
+cor.test(overall$result, overall$treat, method = "spearman")
+
+# Calculate Pearson CI (and check result from above)
+ci_cor(x = overall$result, y = overall$treat, method = "pearson")
+
+
+```
+
+<br>
+
+Using Pearson's correlation to estimate the relationship between study group and health status, we get an estimated R of `r {round(cor.test(overall$result, overall$treat, method = "pearson")$estimate, 3)}`. 
+
+Using Spearman's correlation to estimate the relationship between study group and health status, we get an estimated R of `r {round(cor.test(overall$result, overall$treat, method = "spearman")$estimate, 3)}`. 
+
+
+Correlation estimates the linear relationship between two variables, and the strength of correlation is measured by the correlation coefficient, $\rho$ (estimated by R). Pearson's correlation is used to evaluate the relation ship between two continuous variables for parametric data (i.e. data from populations that are assumed to be normally distributed). Conversely, Spearman's correlation is a nonparametric measure of correlation using rank-ordered variables. In general, Pearson's correlation measures the linear relationship between two variables assumed to be approximately normal while Spearman's correlation measures directional relationship between two variables, even if that relationship is not constant (i.e. non-linear).
+
+Our 95% confidence interval for the Pearson correlation coefficient is (`r {round(ci_cor(x = overall$result, y = overall$treat, method = "pearson")$interval, 3)}`). However, in this circumstance, it does not make sense to transform the data to normal to calculat the CI for Pearson's correlation. Our dataset includes bi-variate data, which cannot be transformed to normal data. Instead, we are using non-parametric data, so it would make more sense to utilize Spearman's correlation. If we did want to calculate a confidence interval for Pearson's correlation, it would make the most sense to use bootstrapping. Through bootstrapping, we could generate a vector of plausible estimates of $\rho$ given our dataset. Then we could calculate the 2.5% and 97.5% quantiles of that data to achieve a 95% confidence interval for Pearson's $\rho$.
